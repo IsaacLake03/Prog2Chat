@@ -8,5 +8,5 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-uint8_t sendPDU(int socket, u_char* packet);
-uint8_t recvPDU(int socket, u_char* packet);
+int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData);
+int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize);

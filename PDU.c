@@ -10,13 +10,13 @@
 #include <netdb.h>
 
 
-uint8_t sendPDU(int socket, u_char* packet){
+int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData){
     int sent = 0;
     int packetLen = 0;
-    packetLen = htons(strlen(packet));
-    u_char* packetBuf = (u_char*)malloc(packetLen+2);
+    packetLen = htons(lengthOfData);
+    u_char* packetBuf = (u_char*)malloc(lengthOfData+2);
     memcpy(packetBuf, &packetLen, 2);
-    memcpy(packetBuf+2, packet, packetLen);
+    memcpy(packetBuf+2, dataBuffer, lengthOfData);
     sent =  safeSend(socket, packetBuf, packetLen+2, 0);
 	if (sent < 0)
 	{
@@ -28,7 +28,7 @@ uint8_t sendPDU(int socket, u_char* packet){
     return 0;
 }
 
-uint8_t recvPDU(int socket, u_char* packet){
+int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
     int received = 0;
     int packetLen = 0;
 
@@ -52,6 +52,6 @@ uint8_t recvPDU(int socket, u_char* packet){
         perror("recv call");
         exit(-1);
     }
-    memcpy(packet, packetBuf, packetLen);
+    memcpy(dataBuffer, packetBuf, packetLen);
     return 0;
 }
