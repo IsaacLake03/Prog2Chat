@@ -17,7 +17,7 @@ int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData){
     u_char* packetBuf = (u_char*)malloc(lengthOfData+2);
     memcpy(packetBuf, &packetLen, 2);
     memcpy(packetBuf+2, dataBuffer, lengthOfData);
-    sent =  safeSend(socket, packetBuf, packetLen+2, 0);
+    sent =  safeSend(clientSocket, packetBuf, packetLen+2, 0);
 	if (sent < 0)
 	{
 		perror("send call");
@@ -34,7 +34,7 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
 
     // Grab the packet length
     u_char* packetBuf = (u_char*)malloc(2);
-    received = safeRecv(socket, packetBuf, 2, 0);
+    received = safeRecv(socketNumber, packetBuf, 2, 0);
     if (received < 0)
     {
         perror("recv call");
@@ -46,7 +46,7 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
 
     // Grab the Message
     packetBuf = (u_char*)malloc(packetLen);
-    received = safeRecv(socket, packetBuf, packetLen, 0);
+    received = safeRecv(socketNumber, packetBuf, packetLen, 0);
     if (received < 0)
     {
         perror("recv call");
