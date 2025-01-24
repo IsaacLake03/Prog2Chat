@@ -9,4 +9,4 @@
 #include <netdb.h>
 
 uint8_t sendPDU(int socket, u_char* packet);
-recvPDU();
+uint8_t recvPDU(int socket, u_char* packet);
