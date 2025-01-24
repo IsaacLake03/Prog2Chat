@@ -34,7 +34,7 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
 
     // Grab the packet length
     u_char* packetBuf = (u_char*)malloc(2);
-    received = safeRecv(socketNumber, packetBuf, 2, 0);
+    received = safeRecv(socketNumber, packetBuf, 2, MSG_WAITALL);
     if (received < 0)
     {
         perror("recv call");
@@ -46,7 +46,7 @@ int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
 
     // Grab the Message
     packetBuf = (u_char*)malloc(packetLen);
-    received = safeRecv(socketNumber, packetBuf, packetLen, 0);
+    received = safeRecv(socketNumber, packetBuf, packetLen, MSG_WAITALL);
     if (received < 0)
     {
         perror("recv call");
