@@ -21,13 +21,17 @@
 #include <netdb.h>
 #include <stdint.h>
 
+#include "pollLib.h"
 #include "networks.h"
 #include "safeUtil.h"
+#include "PDU.h"
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
 
-void sendToServer(int socketNum);
+void clientControl(int socketNum);
+void processMsgFromServer(int socketNum);
+void processStdin(int socketNum);
 int readFromStdin(uint8_t * buffer);
 void checkArgs(int argc, char * argv[]);
 
@@ -39,31 +43,64 @@ int main(int argc, char * argv[])
 
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
-	
-	sendToServer(socketNum);
-	
+	setupPollSet();
+    addToPollSet(socketNum);
+    addToPollSet(STDIN_FILENO);
+	while(1){
+    	clientControl(socketNum);
+	}
 	close(socketNum);
 	
 	return 0;
 }
 
-void sendToServer(int socketNum)
-{
-	uint8_t sendBuf[MAXBUF];   //data buffer
+void clientControl(int socketNum){
+	int readySocket = pollCall(-1);
+	printf("getting here\n");
+	if(readySocket == socketNum) processMsgFromServer(readySocket);
+	else if(readySocket == STDIN_FILENO) processStdin(socketNum);
+	else{
+		perror("poll timeout");
+		exit(1);
+	}
+}
+
+void processMsgFromServer(int socketNum){
+    uint8_t dataBuffer[MAXBUF];
+	int messageLen = 0;
+
+	
+	//now get the data from the server socket
+	if((messageLen = recvPDU(socketNum, dataBuffer, MAXBUF)) > 0){
+		printf("Message received on socket: %d, length: %d Data: %s\n", socketNum, messageLen, dataBuffer);
+	}
+	else
+	{
+        close(socketNum);
+        removeFromPollSet(socketNum);
+        //remove socket from handle table in P2
+		printf("Server terminated\n");
+        exit(1);
+	}
+}
+
+void processStdin(int socketNum){
+    uint8_t sendBuf[MAXBUF];   //data buffer
 	int sendLen = 0;        //amount of data to send
 	int sent = 0;            //actual amount of data sent/* get the data and send it   */
 	
 	sendLen = readFromStdin(sendBuf);
 	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
 	
-	sent =  safeSend(socketNum, sendBuf, sendLen, 0);
-	if (sent < 0)
+	sent = sendPDU(socketNum, sendBuf, sendLen);
+	if (sent > 0)
 	{
-		perror("send call");
-		exit(-1);
-	}
-
-	printf("Amount of data sent is: %d\n", sent);
+		printf("Amount of data sent is: %d\n", sent);
+	} 
+    else{
+        printf("Server terminated\n");
+        exit(1);
+    }
 }
 
 int readFromStdin(uint8_t * buffer)
@@ -73,7 +110,7 @@ int readFromStdin(uint8_t * buffer)
 	
 	// Important you don't input more characters than you have space 
 	buffer[0] = '\0';
-	printf("Enter data: ");
+	//printf("Enter data: ");
 	while (inputLen < (MAXBUF - 1) && aChar != '\n')
 	{
 		aChar = getchar();

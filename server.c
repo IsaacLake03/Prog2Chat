@@ -21,60 +21,87 @@
 #include <netdb.h>
 #include <stdint.h>
 
+#include "pollLib.h"
 #include "networks.h"
 #include "safeUtil.h"
+#include "PDU.h"
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
 
-void recvFromClient(int clientSocket);
+void serverControl(int mainServerSocket);
+void addNewSocket(int readySocket);
+void processClient(int clientSocket);
 int checkArgs(int argc, char *argv[]);
 
 int main(int argc, char *argv[])
 {
 	int mainServerSocket = 0;   //socket descriptor for the server socket
-	int clientSocket = 0;   //socket descriptor for the client socket
+	//int clientSocket = 0;   //socket descriptor for the client socket
 	int portNumber = 0;
 	
 	portNumber = checkArgs(argc, argv);
 	
 	//create the server socket
 	mainServerSocket = tcpServerSetup(portNumber);
-
-	// wait for client to connect
-	clientSocket = tcpAccept(mainServerSocket, DEBUG_FLAG);
-
-	recvFromClient(clientSocket);
-	
+	setupPollSet();
+	addToPollSet(mainServerSocket);
+	while(1){
+		serverControl(mainServerSocket);
+	}
 	/* close the sockets */
-	close(clientSocket);
 	close(mainServerSocket);
 
-	
 	return 0;
 }
 
-void recvFromClient(int clientSocket)
-{
-	uint8_t dataBuffer[MAXBUF];
-	int messageLen = 0;
-	
-	//now get the data from the client_socket
-	if ((messageLen = safeRecv(clientSocket, dataBuffer, MAXBUF, 0)) < 0)
-	{
-		perror("recv call");
-		exit(-1);
-	}
+void serverControl(int mainServerSocket){
+    int readySocket = pollCall(-1);
+    if(readySocket == mainServerSocket){ 
+		addNewSocket(readySocket);
+    }else if(readySocket < 0){
+        perror("poll timeout");
+        exit(1);
+    }
+    else{processClient(readySocket);}
+}
 
-	if (messageLen > 0)
-	{
-		printf("Message received, length: %d Data: %s\n", messageLen, dataBuffer);
+void addNewSocket(int readySocket){
+    int newSocket = tcpAccept(readySocket, DEBUG_FLAG);
+    addToPollSet(newSocket);
+}
+
+void processClient(int clientSocket){
+	int messageLen = 0;
+    printf("getting here guys\n");
+    uint8_t dataBuffer[MAXBUF];
+	//now get the data from the client_socket
+	printf("getting here guys still\n");
+    messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+	printf("%d\n", messageLen);
+	if(messageLen > 0){
+		printf("Message received on socket: %d, length: %d Data: %s\n", clientSocket, messageLen, dataBuffer);
+        // uint8_t repeatMSG[messageLen];
+        // memcpy(repeatMSG, dataBuffer, messageLen);
+        // int sent = sendPDU(clientSocket, repeatMSG, messageLen);
+        // if (sent > 0)
+        // {
+        //     printf("Amount of data sent is: %d\n", sent);
+        // } 
+        // else {
+        //     printf("Client has terminated\n");
+        //     exit(1);
+        // }
 	}
 	else
 	{
-		printf("Connection closed by other side\n");
+        printf("Connection closed by other side\n");
+        close(clientSocket);
+        removeFromPollSet(clientSocket);
+        //remove socket from handle table in P2
 	}
 }
+
 
 int checkArgs(int argc, char *argv[])
 {
@@ -84,7 +111,7 @@ int checkArgs(int argc, char *argv[])
 	if (argc > 2)
 	{
 		fprintf(stderr, "Usage %s [optional port number]\n", argv[0]);
-		exit(-1);
+		exit(1);
 	}
 	
 	if (argc == 2)
@@ -94,4 +121,3 @@ int checkArgs(int argc, char *argv[])
 	
 	return portNumber;
 }
-
