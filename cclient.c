@@ -5,6 +5,11 @@
 * Use at your own risk.  
 *
 *****************************************************************************/
+/* 
+ * Terminal Cmmds: cd - Enter file; cd .. - Exit file; ls - List all files; rm fileName - Remove file
+ * Relevant Cmmds: ./client localhost PORTNUMBER
+ * 
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,119 +26,111 @@
 #include <netdb.h>
 #include <stdint.h>
 
+#include "PDU.h"
 #include "pollLib.h"
 #include "networks.h"
 #include "safeUtil.h"
-#include "PDU.h"
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
 
-void clientControl(int socketNum);
-void processMsgFromServer(int socketNum);
-void processStdin(int socketNum);
-int readFromStdin(uint8_t * buffer);
 void checkArgs(int argc, char * argv[]);
+void clientControl(int clientSocket);
+void processStdin(int clientSocket);
+int readFromStdin(uint8_t * buffer);
+void processMsgFromServer(int serverSocket);
 
-int main(int argc, char * argv[])
-{
-	int socketNum = 0;         //socket descriptor
-	
+int main(int argc, char * argv[]) {
+	int clientSocket = 0;         //Socket descriptor
+
 	checkArgs(argc, argv);
 
-	/* set up the TCP Client socket  */
-	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
+	/// Set up the TCP Client socket ///
+	clientSocket = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
+
+	/// Set up polling ///
 	setupPollSet();
-    addToPollSet(socketNum);
-    addToPollSet(STDIN_FILENO);
-	while(1){
-    	clientControl(socketNum);
-	}
-	close(socketNum);
+	addToPollSet(clientSocket);
+	addToPollSet(STDIN_FILENO);
 	
+	while (1) {
+		clientControl(clientSocket);
+
+	}
+	
+	close(clientSocket);
 	return 0;
 }
 
-void clientControl(int socketNum){
-	int readySocket = pollCall(-1);
-	printf("getting here\n");
-	if(readySocket == socketNum) processMsgFromServer(readySocket);
-	else if(readySocket == STDIN_FILENO) processStdin(socketNum);
-	else{
-		perror("poll timeout");
+/* Esnure the correct # of parameters were passed. Terminate otherwise. */
+void checkArgs(int argc, char * argv[]) {
+	/// Check command line arguments  ///
+	if (argc != 3) {
+		printf("usage: %s host-name port-number \n", argv[0]);
 		exit(1);
+
 	}
 }
 
-void processMsgFromServer(int socketNum){
-    uint8_t dataBuffer[MAXBUF];
-	int messageLen = 0;
+/* Client control logic: Read/send from stdin or handle server disconnect */
+void clientControl(int clientSocket) {
+	int pollResult;
 
-	
-	//now get the data from the server socket
-	if((messageLen = recvPDU(socketNum, dataBuffer, MAXBUF)) > 0){
-		printf("Message received on socket: %d, length: %d Data: %s\n", socketNum, messageLen, dataBuffer);
-	}
-	else
-	{
-        close(socketNum);
-        removeFromPollSet(socketNum);
-        //remove socket from handle table in P2
-		printf("Server terminated\n");
-        exit(1);
+	pollResult = pollCall(3500);
+
+	if (pollResult == STDIN_FILENO) {			//Available message in stdin
+		processStdin(clientSocket);				//Read client's messages
+
+	} else if (pollResult == clientSocket) {	//Server connection closed
+		processMsgFromServer(clientSocket);		//Terminate client socket
+
 	}
 }
 
-void processStdin(int socketNum){
-    uint8_t sendBuf[MAXBUF];   //data buffer
-	int sendLen = 0;        //amount of data to send
-	int sent = 0;            //actual amount of data sent/* get the data and send it   */
+/* Reads input from stdin, converts into a PDU and sends to the server */
+void processStdin(int clientSocket) {
+	uint8_t inputBuffer[MAXBUF];
+	int bytesSent = 0;
+	int bufferLength = 0;
 	
-	sendLen = readFromStdin(sendBuf);
-	printf("read: %s string len: %d (including null)\n", sendBuf, sendLen);
+	bufferLength = readFromStdin(inputBuffer);						//Read from Stdin
+	printf("Reading: %s\nString length: %d (including null)\n", inputBuffer, bufferLength);
 	
-	sent = sendPDU(socketNum, sendBuf, sendLen);
-	if (sent > 0)
-	{
-		printf("Amount of data sent is: %d\n", sent);
-	} 
-    else{
-        printf("Server terminated\n");
-        exit(1);
-    }
+	bytesSent = sendPDU(clientSocket, inputBuffer, bufferLength);	//Send message to server
+
+	if (bytesSent < 0) {											//ERROR DETECTION
+		perror("send call");
+		exit(-1);
+
+	}
+	printf("Amount of data bytesSent is: %d\n\n", bytesSent);
 }
 
-int readFromStdin(uint8_t * buffer)
-{
-	char aChar = 0;
-	int inputLen = 0;        
+/* Reads input from stdin: Ensure the input length < buffer size and null terminates the string */
+int readFromStdin(uint8_t * buffer) {
+	char inputChar = 0;
+	int bufferIndex = 0;        
 	
 	// Important you don't input more characters than you have space 
 	buffer[0] = '\0';
-	//printf("Enter data: ");
-	while (inputLen < (MAXBUF - 1) && aChar != '\n')
-	{
-		aChar = getchar();
-		if (aChar != '\n')
-		{
-			buffer[inputLen] = aChar;
-			inputLen++;
+	while (bufferIndex < (MAXBUF - 1) && inputChar != '\n') {
+		inputChar = getchar();
+		if (inputChar != '\n') {
+			buffer[bufferIndex] = inputChar;
+			bufferIndex++;
 		}
 	}
 	
-	// Null terminate the string
-	buffer[inputLen] = '\0';
-	inputLen++;
+	/// Null terminate the string ///
+	buffer[bufferIndex] = '\0';
+	bufferIndex++;
 	
-	return inputLen;
+	return bufferIndex;
 }
 
-void checkArgs(int argc, char * argv[])
-{
-	/* check command line arguments  */
-	if (argc != 3)
-	{
-		printf("usage: %s host-name port-number \n", argv[0]);
-		exit(1);
-	}
+/* Handle server disconnect: Close the client and terminate the program */
+void processMsgFromServer(int clientSocket) {
+	printf("Server has terminated\n");
+	close(clientSocket);					//Close client socket
+	exit(1);
 }
