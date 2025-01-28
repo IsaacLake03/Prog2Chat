@@ -148,7 +148,7 @@ static unsigned char * getIPAddress46(const char * hostName, struct sockaddr_sto
 }
 
 
-void gethostbyname_test()
+void gethostbyname_test(void)
 {
 	gethostbyname_test_lookup("www.google.com");
 	gethostbyname_test_lookup("ipv6.google.com");

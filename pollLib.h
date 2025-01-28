@@ -13,7 +13,7 @@
 #define POLL_SET_SIZE 10
 #define POLL_WAIT_FOREVER -1
 
-void setupPollSet();
+void setupPollSet(void);
 void addToPollSet(int socketNumber);
 void removeFromPollSet(int socketNumber);
 int pollCall(int timeInMilliSeconds);

@@ -14,7 +14,7 @@ char * getIPAddressString4(unsigned char * ipAddress);
 char * getIPAddressString6(unsigned char * ipAddress);
 
 // Testing functions
-void gethostbyname_test();
+void gethostbyname_test(void);
 void gethostbyname_test_lookup(char * hostname);
 
 // Just for printout out address info

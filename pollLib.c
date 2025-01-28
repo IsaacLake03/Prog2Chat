@@ -27,7 +27,7 @@ static int currentPollSetSize = 0;
 static void growPollSet(int newSetSize);
 
 // Poll functions (setup, add, remove, call)
-void setupPollSet()
+void setupPollSet(void)
 {
 	currentPollSetSize = POLL_SET_SIZE;
 	pollFileDescriptors = (struct pollfd *) sCalloc(POLL_SET_SIZE, sizeof(struct pollfd));

@@ -24,8 +24,7 @@
 // This function sets the server socket. The function returns the server
 // socket number and prints the port number to the screen.  
 
-int tcpServerSetup(int serverPort)
-{
+int tcpServerSetup(int serverPort) {
 	// Opens a server socket, binds that socket, prints out port, call listens
 	// returns the mainServerSocket
 	
@@ -34,8 +33,7 @@ int tcpServerSetup(int serverPort)
 	socklen_t serverAddressLen = sizeof(serverAddress);  
 
 	mainServerSocket= socket(AF_INET6, SOCK_STREAM, 0);
-	if(mainServerSocket < 0)
-	{
+	if(mainServerSocket < 0) {
 		perror("socket call");
 		exit(1);
 	}
@@ -43,24 +41,21 @@ int tcpServerSetup(int serverPort)
 	memset(&serverAddress, 0, sizeof(struct sockaddr_in6));
 	serverAddress.sin6_family= AF_INET6;         		
 	serverAddress.sin6_addr = in6addr_any;   
-	serverAddress.sin6_port= htons(serverPort);         
+	serverAddress.sin6_port= htons(serverPort);    //serverPort     
 
 	// bind the name (address) to a port 
-	if (bind(mainServerSocket, (struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0)
-	{
+	if (bind(mainServerSocket, (struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0) {
 		perror("bind call");
 		exit(-1);
 	}
 	
 	// get the port name and print it out
-	if (getsockname(mainServerSocket, (struct sockaddr*)&serverAddress, &serverAddressLen) < 0)
-	{
+	if (getsockname(mainServerSocket, (struct sockaddr*)&serverAddress, &serverAddressLen) < 0) {
 		perror("getsockname call");
 		exit(-1);
 	}
 
-	if (listen(mainServerSocket, LISTEN_BACKLOG) < 0)
-	{
+	if (listen(mainServerSocket, LISTEN_BACKLOG) < 0) {
 		perror("listen call");
 		exit(-1);
 	}
@@ -73,21 +68,18 @@ int tcpServerSetup(int serverPort)
 // This function waits for a client to ask for services.  It returns
 // the client socket number.   
 
-int tcpAccept(int mainServerSocket, int debugFlag)
-{
+int tcpAccept(int mainServerSocket, int debugFlag) {
 	struct sockaddr_in6 clientAddress;   
 	int clientAddressSize = sizeof(clientAddress);
 	int client_socket = 0;
 
-	if ((client_socket = accept(mainServerSocket, (struct sockaddr*) &clientAddress, (socklen_t *) &clientAddressSize)) < 0)
-	{
+	if ((client_socket = accept(mainServerSocket, (struct sockaddr*) &clientAddress, (socklen_t *) &clientAddressSize)) < 0) {
 		perror("accept call");
 		exit(-1);
 	}
 	  
-	if (debugFlag)
-	{
-		printf("Client accepted.  Client IP: %s Client Port Number: %d\n",  
+	if (debugFlag) {
+		printf("Client accepted. Client IP: %s Client Port Number: %d\n",  
 				getIPAddressString6(clientAddress.sin6_addr.s6_addr), ntohs(clientAddress.sin6_port));
 	}
 	
@@ -98,8 +90,7 @@ int tcpAccept(int mainServerSocket, int debugFlag)
 // This funciton opens a TCP socket, and connects to the server
 // returns the socket number to the server
 
-int tcpClientSetup(char * serverName, char * serverPort, int debugFlag)
-{
+int tcpClientSetup(char * serverName, char * serverPort, int debugFlag) {
 	// This is used by the client to connect to a server using TCP
 	
 	int socket_num;
@@ -107,8 +98,7 @@ int tcpClientSetup(char * serverName, char * serverPort, int debugFlag)
 	struct sockaddr_in6 serverAddress;      
 	
 	// create the socket
-	if ((socket_num = socket(AF_INET6, SOCK_STREAM, 0)) < 0)
-	{
+	if ((socket_num = socket(AF_INET6, SOCK_STREAM, 0)) < 0) {
 		perror("socket call");
 		exit(-1);
 	}
@@ -119,20 +109,17 @@ int tcpClientSetup(char * serverName, char * serverPort, int debugFlag)
 	serverAddress.sin6_port = htons(atoi(serverPort));
 	
 	// get the address of the server 
-	if ((ipAddress = gethostbyname6(serverName, &serverAddress)) == NULL)
-	{
+	if ((ipAddress = gethostbyname6(serverName, &serverAddress)) == NULL) {
 		exit(-1);
 	}
 
-	if(connect(socket_num, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0)
-	{
+	if(connect(socket_num, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) {
 		perror("connect call");
 		exit(-1);
 	}
 
-	if (debugFlag)
-	{
-		printf("Connected to %s IP: %s Port Number: %d\n", serverName, getIPAddressString6(ipAddress), atoi(serverPort));
+	if (debugFlag) {
+		printf("Connected to %s. IP: %s Port Number: %d\n", serverName, getIPAddressString6(ipAddress), atoi(serverPort));
 	}
 	
 	return socket_num;
@@ -141,15 +128,13 @@ int tcpClientSetup(char * serverName, char * serverPort, int debugFlag)
 // This funciton creates a UDP socket on the server side and binds to that socket.  
 // It prints out the port number and returns the socket number.
 
-int udpServerSetup(int serverPort)
-{
+int udpServerSetup(int serverPort) {
 	struct sockaddr_in6 serverAddress;
 	int socketNum = 0;
 	int serverAddrLen = 0;	
 	
 	// create the socket
-	if ((socketNum = socket(AF_INET6,SOCK_DGRAM,0)) < 0)
-	{
+	if ((socketNum = socket(AF_INET6,SOCK_DGRAM,0)) < 0) {
 		perror("socket() call error");
 		exit(-1);
 	}
@@ -161,8 +146,7 @@ int udpServerSetup(int serverPort)
 	serverAddress.sin6_port = htons(serverPort);   // if 0 = os picks 
 
 	// bind the name (address) to a port
-	if (bind(socketNum,(struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0)
-	{
+	if (bind(socketNum,(struct sockaddr *) &serverAddress, sizeof(serverAddress)) < 0) {
 		perror("bind() call error");
 		exit(-1);
 	}
@@ -180,15 +164,13 @@ int udpServerSetup(int serverPort)
 // It assumes the address structure is created before calling this.
 // Returns the socket number and the filled in serverAddress struct.
 
-int setupUdpClientToServer(struct sockaddr_in6 *serverAddress, char * hostName, int serverPort)
-{
+int setupUdpClientToServer(struct sockaddr_in6 *serverAddress, char * hostName, int serverPort) {
 	int socketNum = 0;
 	char ipString[INET6_ADDRSTRLEN];
 	uint8_t * ipAddress = NULL;
 	
 	// create the socket
-	if ((socketNum = socket(AF_INET6, SOCK_DGRAM, 0)) < 0)
-	{
+	if ((socketNum = socket(AF_INET6, SOCK_DGRAM, 0)) < 0) {
 		perror("socket() call error");
 		exit(-1);
 	}
@@ -197,8 +179,7 @@ int setupUdpClientToServer(struct sockaddr_in6 *serverAddress, char * hostName, 
 	serverAddress->sin6_port = ntohs(serverPort);
 	serverAddress->sin6_family = AF_INET6;	
 	
-	if ((ipAddress = gethostbyname6(hostName, serverAddress)) == NULL)
-	{
+	if ((ipAddress = gethostbyname6(hostName, serverAddress)) == NULL) {
 		exit(-1);
 	}
 		
@@ -208,5 +189,4 @@ int setupUdpClientToServer(struct sockaddr_in6 *serverAddress, char * hostName, 
 		
 	return socketNum;
 }
-
 

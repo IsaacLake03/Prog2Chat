@@ -7,7 +7,7 @@ CFLAGS = -g -Wall -Wextra -pedantic -std=gnu99
 
 all:   cclient server
 
-client: cclient.c $(OBJS)
+cclient: cclient.c $(OBJS)
 	gcc $(CFLAGS) cclient.c -o cclient  $(OBJS) $(LIBS)
 
 server: server.c $(OBJS)
