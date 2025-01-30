@@ -37,7 +37,7 @@ void AssignHandle(int clientSocket, char* handle, uint8_t handleLen);
 void SendHandleList(int clientSocket);
 void broadcastMessage(char* message, int senderSocket);
 void getHandleFromMessage(char* message, char* handle);
-void sendMessage(char* message, int senderSocket, char* handle);
+void sendMessage(char* message, int senderSocket, uint8_t messageLen);
 
 // Array of clients, prelim max of 500 clients testing shouldnt exceed 300?
 Client clients[500] = {0}; 
@@ -120,17 +120,21 @@ void processClient(int clientSocket) {
 	}
 	printf("\n");
 
-	if (messageLen == 0){                //Client connection closed
+	if (messageLen < 3){                //Client connection closed
+		char * name = "Null";
         printf("Client has closed their connection\n");
+		AssignHandle(clientSocket, name, 4);
         removeFromPollSet(clientSocket);
         close(clientSocket);
+
 		return;
 
     }
-    // Assumes First message sent is the clients handle
+
+    // Gets name from initial message
     Client* client = getClientBySocket(clientSocket);
     if (flag == 1) {
-        AssignHandle(clientSocket, (char*)(dataBuffer + 3), dataBuffer[3]);
+        AssignHandle(clientSocket, (char*)(dataBuffer + 4), dataBuffer[3]);
         return;
     }
 
@@ -144,38 +148,14 @@ void processClient(int clientSocket) {
 
 	// Broadcast message
 	if(flag == 4) {
-		broadcastMessage((char*)(dataBuffer + 5), clientSocket);
+		broadcastMessage((char*)(dataBuffer+3), clientSocket);
 		printf("Broadcast message sent from client %s\n", client->handle);
 		return;
 	}
 
-	if(flag == 5) {
-		char* destHandle = malloc(MAX_HANDLE_LEN);
-		getHandleFromMessage((char*)(dataBuffer + 5), (char*)destHandle);
-		sendMessage((char*)(dataBuffer + 4 + strlen(destHandle) + 2), clientSocket, destHandle);
-		free(destHandle);
+	if(flag == 5||flag == 6) {
+		sendMessage((char*)dataBuffer, clientSocket, messageLen);
 		printf("Message sent from client %s\n", client->handle);
-		return;
-	}
-
-	if (flag == 6) {
-		
-		uint8_t numHandles = dataBuffer[5]-'0';
-		char* handles[numHandles];
-		int offset = 7;
-		for (int i = 0; i < numHandles; i++) {
-			handles[i] = malloc(MAX_HANDLE_LEN);
-			getHandleFromMessage((char*)(dataBuffer + offset), handles[i]);
-			offset += strlen(handles[i]) + 1;
-		}
-		printf("Num handles: %d\n", numHandles);
-		for (int i = 0; i < numHandles; i++) {
-			sendMessage((char*)(dataBuffer + offset), clientSocket, handles[i]);
-		}
-		for (int i = 0; i < numHandles; i++) {
-			free(handles[i]);
-		}
-		printf("Message sent from client %s to multiple handles\n", client->handle);
 		return;
 	}
 
@@ -188,12 +168,17 @@ void processClient(int clientSocket) {
 
 void AssignHandle(int clientSocket, char* handle, uint8_t handleLen) {
     // Assigns handle to client
+	
 	uint8_t handleExists = 0;
 	u_char handleT[handleLen+1];
 	memcpy(handleT, handle, handleLen+1);
-	handle[handleLen+1] = '\0';
+	
+	if(handle[handleLen] != '\0') {
+		handle[handleLen] = '\0';
+	}
+
 	for (int i = 0; i < 500; i++) {
-		if (strcmp(clients[i].handle, (char*)handleT) == 0) {
+		if (strcmp(clients[i].handle, (char*)handleT) == 0 && strcmp(clients[i].handle, "Null") != 0) {
 			handleExists = 1;
 		}
 	}
@@ -206,9 +191,12 @@ void AssignHandle(int clientSocket, char* handle, uint8_t handleLen) {
 		u_char flag[1];
 		flag[0] = 2;
 		Client* client = getClientBySocket(clientSocket);
+		
 		memcpy(client->handle, handle, handleLen+1);
 		client->handle[handleLen+1] = '\0'; // Ensure null-termination
-		printf("Handle assigned to client %d: %s\n", client->socketNumber, client->handle);
+		if(strcmp(client->handle, "Null") != 0) {
+			printf("Handle assigned to client %d: %s\n", client->socketNumber, client->handle);
+		}
 		sendPDU(clientSocket, flag, 1);
 	}
 }
@@ -250,23 +238,44 @@ void broadcastMessage(char* message, int senderSocket) {
 	// Broadcasts message to all clients
 	printf("Broadcasting message: %s\n", message);
 	for (int i = 0; i <= 500; i++) {
-		if (clients[i].handle[0] != '\0' && clients[i].socketNumber != senderSocket) {
+		if (clients[i].handle[0] != '\0' && clients[i].socketNumber != senderSocket && strcmp(clients[i].handle, "Null") != 0){
 			sendPDU(clients[i].socketNumber, (uint8_t*)message, strlen(message));
 		}
 	}
 
 }
 
-void sendMessage(char* message, int senderSocket, char* handle) {
-	// Sends message to specific client
-	Client* client = getClientByHandle(handle);
-	printf("message: %s\n", message);
-	char* newMessage = malloc((strlen(message) + strlen(getClientBySocket(senderSocket)->handle) + 10) * sizeof(char));
-	sprintf(newMessage, "%s: %s", getClientBySocket(senderSocket)->handle, message);
-	if (client != NULL) {
-		sendPDU(client->socketNumber, (uint8_t*)newMessage, strlen(newMessage));
+void sendMessage(char* message, int senderSocket, uint8_t messageLen) {
+	u_char senderHandle[MAXBUF];
+	uint8_t numHandles = message[4+message[3]];
+	uint8_t handles[numHandles][MAXBUF];
+	uint8_t offset = 5+message[3];
+	memcpy(senderHandle, message+4, message[3]);
+	senderHandle[(uint8_t)message[3]] = '\0';
+
+	for(int i = 0; i < numHandles; i++) {
+		memcpy(handles[i], message+offset+1, message[offset]);
+		handles[i][(uint8_t)message[offset]] = '\0';
+		offset += message[offset]+1;
 	}
-	free(newMessage);
+	for(int i = 0; i<numHandles; i++) {
+		Client* dest = getClientByHandle((char*)handles[i]);
+		if(dest == NULL) {
+			u_char HandleNotExist[MAXBUF];
+			u_char handleLen = strlen((char*)handles[i]);
+			HandleNotExist[0] = 7;
+			HandleNotExist[1] = handleLen;
+			memcpy(HandleNotExist+2, handles[i], handleLen);
+			sendPDU(senderSocket, HandleNotExist, handleLen+2);
+		}else{
+			printf("Message Sent to %d: %s\n", dest->socketNumber, message+offset);
+			sendPDU(dest->socketNumber, (uint8_t*)message+2, messageLen);
+			for(int i = 0; i < messageLen; i++) {
+				printf("%02x.", message[i+2]);
+			}
+			printf("\n");
+		}
+	}
 }
 
 void getHandleFromMessage(char* message, char* handle) {
