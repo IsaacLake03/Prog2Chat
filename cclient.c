@@ -46,12 +46,24 @@ int main(int argc, char * argv[]) {
 	checkArgs(argc, argv);
 
 	/// Set up the TCP Client socket ///
-	clientSocket = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
+	clientSocket = tcpClientSetup(argv[2], argv[3], DEBUG_FLAG);
 
 	/// Set up polling ///
 	setupPollSet();
 	addToPollSet(clientSocket);
 	addToPollSet(STDIN_FILENO);
+
+	// Send the client's handle
+	uint8_t handleBuffer[MAXBUF];
+	uint8_t handlelen = strlen(argv[1]);
+	handleBuffer[0] = 1;
+	handleBuffer[1] = handlelen;
+	memcpy(handleBuffer+2, argv[1], strlen(argv[1]));
+
+	printf("Sending handle: %lu\n", strlen((char*)handleBuffer));
+
+	sendPDU(clientSocket, (uint8_t*)handleBuffer, strlen((char*)handleBuffer));
+
 	
 	while (1) {
 		clientControl(clientSocket);
@@ -65,8 +77,8 @@ int main(int argc, char * argv[]) {
 /* Esnure the correct # of parameters were passed. Terminate otherwise. */
 void checkArgs(int argc, char * argv[]) {
 	/// Check command line arguments  ///
-	if (argc != 3) {
-		printf("usage: %s host-name port-number \n", argv[0]);
+	if (argc != 4) {
+		printf("usage: %s handle host-name port-number \n", argv[0]);
 		exit(1);
 
 	}
@@ -92,21 +104,50 @@ void clientControl(int clientSocket) {
 
 /* Reads input from stdin, converts into a PDU and sends to the server */
 void processStdin(int clientSocket) {
-	uint8_t inputBuffer[MAXBUF];
-	int bytesSent = 0;
-	int bufferLength = 0;
-	
-	bufferLength = readFromStdin(inputBuffer);						//Read from Stdin
-	//printf("Reading: %s, String length: %d (including null)\n", inputBuffer, bufferLength);
-	
-	bytesSent = sendPDU(clientSocket, inputBuffer, bufferLength);	//Send message to server
+    uint8_t inputBuffer[MAXBUF];
+    uint8_t sendBuffer[MAXBUF];
+    int bytesSent = 0;
+    int bufferLength = 0;
+    uint8_t flag = 0; // Change u_char to uint8_t
 
-	if (bytesSent < 0) {											//ERROR DETECTION
-		perror("send call");
-		exit(-1);
+    bufferLength = readFromStdin(inputBuffer); // Read from Stdin
 
+    // Handle Flags
+    if (*(inputBuffer) == '%') {
+        // Get current handle list
+        if (*(inputBuffer + 1) == 'l' || *(inputBuffer + 1) == 'L') {
+            printf("Requesting handle list\n");
+            flag = 10;
+        }
+
+        // Broadcast message
+        if (*(inputBuffer + 1) == 'b' || *(inputBuffer + 1) == 'B') {
+            printf("Broadcasting message: %s\n", inputBuffer + 3);
+            flag = 4;
+        }
+
+        if (*(inputBuffer + 1) == 'm' || *(inputBuffer + 1) == 'M') {
+            printf("Sending message to %s: %s\n", inputBuffer + 3, inputBuffer + 3);
+            flag = 5;
+        }
+
+        if (*(inputBuffer + 1) == 'c' || *(inputBuffer + 1) == 'C') {
+            printf("Sending to multiple\n");
+            flag = 6;
+        }
+    }
+
+    sendBuffer[0] = flag;
+    memcpy(sendBuffer + 1, inputBuffer+3, bufferLength-3);
+	for(int i = 0; i < bufferLength-3; i++) {
+		printf(".%02x", sendBuffer[i]);
 	}
-	// printf("Amount of data bytesSent is: %d\n", bytesSent);
+
+    // Send the buffer
+    bytesSent = send(clientSocket, sendBuffer, bufferLength - 2, 0);
+    if (bytesSent < 0) {
+        perror("send");
+    }
 }
 
 /* Reads input from stdin: Ensure the input length < buffer size and null terminates the string */

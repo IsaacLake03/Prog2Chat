@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stdio.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "polllib.h": "c"
     }
 }

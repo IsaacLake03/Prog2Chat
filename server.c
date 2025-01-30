@@ -33,7 +33,7 @@ void addNewSocket(int mainServerSocket);
 void processClient(int clientSocket);
 Client* getClientBySocket(int socket);
 Client* getClientByHandle(char* handle);
-void AssignHandle(int clientSocket, char* handle);
+void AssignHandle(int clientSocket, char* handle, uint8_t handleLen);
 void SendHandleList(int clientSocket);
 void broadcastMessage(char* message, int senderSocket);
 void getHandleFromMessage(char* message, char* handle);
@@ -93,7 +93,6 @@ void serverControl(int mainServerSocket) {
 
         } else if (socketNumber > mainServerSocket) {    //Print client's message
             processClient(socketNumber);
-
         }
     }
 }
@@ -112,40 +111,47 @@ void addNewSocket(int mainServerSocket) {
 void processClient(int clientSocket) {
     uint8_t dataBuffer[MAXBUF];
     int messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+	int flag = dataBuffer[2];
+	printf("Flag: %x\n", flag);
+
+	for(int i = 0; i < messageLen+2; i++) {
+		printf(".%02x", dataBuffer[i]);
+	}
+	printf("\n");
+
 
     // Assumes First message sent is the clients handle
     Client* client = getClientBySocket(clientSocket);
-    if (client->handle[0] == '\0' || strcmp(client->handle, "Null") == 0) {
-        AssignHandle(clientSocket, (char*)(dataBuffer + 2));
+    if (flag == 1) {
+        AssignHandle(clientSocket, (char*)(dataBuffer + 3), dataBuffer[3]);
         return;
     }
 
 	// Handle Flags
-	if(*(dataBuffer + 2) == '%' || *(dataBuffer + 2) == '%') {
-		// Get current handle list
-		if (*(dataBuffer + 3) == 'l' || *(dataBuffer + 3) == 'L') {
-			SendHandleList(clientSocket);
-			printf("Handle list sent to client %s\n", client->handle);
-			return;
-		}
+	// Get current handle list
+	if (flag==10) {
+		SendHandleList(clientSocket);
+		printf("Handle list sent to client %s\n", client->handle);
+		return;
+	}
 
-		// Broadcast message
-		if(*(dataBuffer + 3) == 'b' || *(dataBuffer + 3) == 'B') {
-			broadcastMessage((char*)(dataBuffer + 5), clientSocket);
-			printf("Broadcast message sent from client %s\n", client->handle);
-			return;
-		}
+	// Broadcast message
+	if(flag == 4) {
+		broadcastMessage((char*)(dataBuffer + 5), clientSocket);
+		printf("Broadcast message sent from client %s\n", client->handle);
+		return;
+	}
 
-		if(*(dataBuffer + 3) == 'm' || *(dataBuffer + 3) == 'M') {
-			char* destHandle = malloc(MAX_HANDLE_LEN);
-			getHandleFromMessage((char*)(dataBuffer + 5), (char*)destHandle);
-			sendMessage((char*)(dataBuffer + 4 + strlen(destHandle) + 2), clientSocket, destHandle);
-			free(destHandle);
-			printf("Message sent from client %s\n", client->handle);
-			return;
-		}
+	if(flag == 5) {
+		char* destHandle = malloc(MAX_HANDLE_LEN);
+		getHandleFromMessage((char*)(dataBuffer + 5), (char*)destHandle);
+		sendMessage((char*)(dataBuffer + 4 + strlen(destHandle) + 2), clientSocket, destHandle);
+		free(destHandle);
+		printf("Message sent from client %s\n", client->handle);
+		return;
+	}
 
-	if (*(dataBuffer + 3) == 'c' || *(dataBuffer + 3) == 'C') {
+	if (flag == 6) {
 		
 		uint8_t numHandles = dataBuffer[5]-'0';
 		char* handles[numHandles];
@@ -165,28 +171,27 @@ void processClient(int clientSocket) {
 		printf("Message sent from client %s to multiple handles\n", client->handle);
 		return;
 	}
-	}
 
     /// Print data from the client_socket ///
     if (messageLen > 0) {                        //Message in buffer
-        printf("Message received from Client: %s, Length: %d, Data: %s\n", client->handle, messageLen, dataBuffer + 2);
+        printf("databuffer[0] = %d\n", dataBuffer[0]);
 
     } else if (messageLen == 0){                //Client connection closed
         printf("Client has closed their connection\n");
         removeFromPollSet(clientSocket);
         close(clientSocket);
-		AssignHandle(clientSocket, "Null");
+		AssignHandle(clientSocket, "Null", 4);
 		clientCount--;
 
     }
 }
 
-void AssignHandle(int clientSocket, char* handle) {
+void AssignHandle(int clientSocket, char* handle, uint8_t handleLen) {
     // Assigns handle to client
 
     Client* client = getClientBySocket(clientSocket);
-    strncpy(client->handle, handle, MAX_HANDLE_LEN - 1);
-    client->handle[MAX_HANDLE_LEN - 1] = '\0'; // Ensure null-termination
+    memcpy(client->handle, handle, handleLen+1);
+    client->handle[handleLen+1] = '\0'; // Ensure null-termination
     printf("Handle assigned to client %d: %s\n", client->socketNumber, client->handle);
 }
 
@@ -244,7 +249,6 @@ void sendMessage(char* message, int senderSocket, char* handle) {
 		sendPDU(client->socketNumber, (uint8_t*)newMessage, strlen(newMessage));
 	}
 	free(newMessage);
-	
 }
 
 void getHandleFromMessage(char* message, char* handle) {

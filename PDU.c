@@ -1,38 +1,42 @@
 #include "PDU.h"
 
-int sendPDU(int clientSocket, uint8_t * dataBuffer, int payloadLength) {
-    int netOrder_PDULength = htons(payloadLength + 2);
-    uint8_t PDU[payloadLength + 2];                             //PDU size = Payload + header (2 bytes)
-    
-    memcpy(PDU, &netOrder_PDULength, 2);                        //Copy PDU length into PDU's header
-    memcpy(PDU + 2, dataBuffer, payloadLength);                 //Copy data into the PDU's payload
-
-    return safeSend(clientSocket, PDU, payloadLength + 2, 0);   //Returns the # of bytes sent
+int sendPDU(int clientSocket, uint8_t * dataBuffer, int lengthOfData){
+    int bytesSent = 0;
+    //calculate PDU length and make big enough PDU buffer
+    uint16_t lengthOfPDU = lengthOfData + 2;
+    uint8_t PDU[lengthOfPDU];
+    //build PDU
+    uint16_t lenPDUNetOrder = htons(lengthOfPDU);
+    memcpy(PDU, &lenPDUNetOrder, 2);
+    memcpy(PDU + 2, dataBuffer, lengthOfData);
+    //send PDU
+    bytesSent = safeSend(clientSocket, PDU, lengthOfPDU, 0);
+    return bytesSent; //return num bytes sent (length of PDU)
 }
 
+/**
+ * recv() the PDU and pass back the dataBuffer
+ * @param socketNumber server socket number
+ * @param dataBuffer buffer for PDU
+ * @param bufferSize size of buffer for PDU
+ * @return data bytes received
+ */
 int recvPDU(int socketNumber, uint8_t * dataBuffer, int bufferSize){
-    int PDULength, hostOrder_payloadLength, 
-        bytesReceived = safeRecv(socketNumber, dataBuffer, 2, MSG_WAITALL);
-
-    /// Parse PDU ///
-    if (bytesReceived == 0) {                               //Connection is closed
-        return 0;
-
-    } else if (bytesReceived > 0) {                         //Parse payload length within dataBuffer
-        memcpy(&PDULength, dataBuffer, 2);                  //Copy header into PDULength
-
-        if (bufferSize < ntohs(PDULength)) {                //ERROR DETECTION: Buffer size too small for PDU
-            perror("Buffer size < PDU length");
-            return -1;
-
-        }
-        
-        hostOrder_payloadLength = ntohs(PDULength) - 2;                                         //Payload length = PDU length - header
-        
-        return safeRecv(socketNumber, dataBuffer + 2, hostOrder_payloadLength, MSG_WAITALL);    //Returns the # of bytes received excluding header
-    } else {                                                //ERROR DETECTION: In case bytesReceived < 0
-        perror("Reached default value for recvPDU()");
-        return -1;
-
+    int16_t PDUlenNetOrder, PDUlenHostOrder;
+    //get message length
+    int bytesReceived = safeRecv(socketNumber, dataBuffer, 2, MSG_WAITALL);
+    if (bytesReceived == 0) //check for closed connection
+    {
+        return bytesReceived;
     }
+    memcpy(&PDUlenNetOrder, dataBuffer, 2);
+    PDUlenHostOrder = ntohs(PDUlenNetOrder);
+    //get message
+    if (bufferSize < PDUlenHostOrder) {  //Exit if buffer is not large enough to receive PDU
+        printf("Buffer Error\n");
+        exit(-1);
+    }
+    bytesReceived = safeRecv(socketNumber, dataBuffer + 2, PDUlenHostOrder - 2, MSG_WAITALL);
+    //return message length (== 0 if connection closed)
+    return bytesReceived ;
 }
