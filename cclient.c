@@ -60,8 +60,6 @@ int main(int argc, char * argv[]) {
 	handleBuffer[1] = handlelen;
 	memcpy(handleBuffer+2, argv[1], strlen(argv[1]));
 
-	printf("Sending handle: %lu\n", strlen((char*)handleBuffer));
-
 	sendPDU(clientSocket, (uint8_t*)handleBuffer, strlen((char*)handleBuffer));
 
 	
@@ -176,6 +174,13 @@ int readFromStdin(uint8_t * buffer) {
 void processMsgFromServer(int clientSocket) {
 	uint8_t dataBuffer[MAXBUF];
 	int messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+	if(dataBuffer[2]==3) {
+		printf("Handle already exists\n");
+		exit(1);
+	}else if(dataBuffer[2]==2) {
+		printf("Handle assigned\n");
+		return;
+	}
 
 	if(messageLen == 0) {
 		printf("Server has terminated\n");

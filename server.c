@@ -113,13 +113,20 @@ void processClient(int clientSocket) {
     int messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
 	int flag = dataBuffer[2];
 	printf("Flag: %x\n", flag);
+	printf("Message length: %d\n", messageLen);
 
 	for(int i = 0; i < messageLen+2; i++) {
-		printf(".%02x", dataBuffer[i]);
+		printf("%02x.", dataBuffer[i]);
 	}
 	printf("\n");
 
+	if (messageLen == 0){                //Client connection closed
+        printf("Client has closed their connection\n");
+        removeFromPollSet(clientSocket);
+        close(clientSocket);
+		return;
 
+    }
     // Assumes First message sent is the clients handle
     Client* client = getClientBySocket(clientSocket);
     if (flag == 1) {
@@ -176,23 +183,34 @@ void processClient(int clientSocket) {
     if (messageLen > 0) {                        //Message in buffer
         printf("databuffer[0] = %d\n", dataBuffer[0]);
 
-    } else if (messageLen == 0){                //Client connection closed
-        printf("Client has closed their connection\n");
-        removeFromPollSet(clientSocket);
-        close(clientSocket);
-		AssignHandle(clientSocket, "Null", 4);
-		clientCount--;
-
     }
 }
 
 void AssignHandle(int clientSocket, char* handle, uint8_t handleLen) {
     // Assigns handle to client
-
-    Client* client = getClientBySocket(clientSocket);
-    memcpy(client->handle, handle, handleLen+1);
-    client->handle[handleLen+1] = '\0'; // Ensure null-termination
-    printf("Handle assigned to client %d: %s\n", client->socketNumber, client->handle);
+	uint8_t handleExists = 0;
+	u_char handleT[handleLen+1];
+	memcpy(handleT, handle, handleLen+1);
+	handle[handleLen+1] = '\0';
+	for (int i = 0; i < 500; i++) {
+		if (strcmp(clients[i].handle, (char*)handleT) == 0) {
+			handleExists = 1;
+		}
+	}
+	if (handleExists == 1) {
+		u_char flag[1];
+		flag[0] = 3;
+		sendPDU(clientSocket, flag, 1);
+		return;
+	}else{
+		u_char flag[1];
+		flag[0] = 2;
+		Client* client = getClientBySocket(clientSocket);
+		memcpy(client->handle, handle, handleLen+1);
+		client->handle[handleLen+1] = '\0'; // Ensure null-termination
+		printf("Handle assigned to client %d: %s\n", client->socketNumber, client->handle);
+		sendPDU(clientSocket, flag, 1);
+	}
 }
 
 Client* getClientBySocket(int socket) {
