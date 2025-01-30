@@ -76,7 +76,10 @@ void checkArgs(int argc, char * argv[]) {
 void clientControl(int clientSocket) {
 	int pollResult;
 
-	pollResult = pollCall(3500);
+	printf("$: ");
+	fflush(stdout);
+
+	pollResult = pollCall(-1);
 
 	if (pollResult == STDIN_FILENO) {			//Available message in stdin
 		processStdin(clientSocket);				//Read client's messages
@@ -94,7 +97,7 @@ void processStdin(int clientSocket) {
 	int bufferLength = 0;
 	
 	bufferLength = readFromStdin(inputBuffer);						//Read from Stdin
-	printf("Reading: %s\nString length: %d (including null)\n", inputBuffer, bufferLength);
+	//printf("Reading: %s, String length: %d (including null)\n", inputBuffer, bufferLength);
 	
 	bytesSent = sendPDU(clientSocket, inputBuffer, bufferLength);	//Send message to server
 
@@ -103,7 +106,7 @@ void processStdin(int clientSocket) {
 		exit(-1);
 
 	}
-	printf("Amount of data bytesSent is: %d\n\n", bytesSent);
+	// printf("Amount of data bytesSent is: %d\n", bytesSent);
 }
 
 /* Reads input from stdin: Ensure the input length < buffer size and null terminates the string */
@@ -130,7 +133,16 @@ int readFromStdin(uint8_t * buffer) {
 
 /* Handle server disconnect: Close the client and terminate the program */
 void processMsgFromServer(int clientSocket) {
-	printf("Server has terminated\n");
-	close(clientSocket);					//Close client socket
-	exit(1);
+	uint8_t dataBuffer[MAXBUF];
+	int messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+
+	if(messageLen == 0) {
+		printf("Server has terminated\n");
+		close(clientSocket);					//Close client socket
+		exit(1);
+	} else{
+		memcpy(dataBuffer+messageLen+2, "\0", 1);
+		printf("%s\n", (char*)(dataBuffer+2));
+		fflush(stdout);
+	}
 }
