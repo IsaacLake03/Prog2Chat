@@ -2,6 +2,7 @@
     "files.associations": {
         "stdio.h": "c",
         "stdint.h": "c",
-        "polllib.h": "c"
+        "polllib.h": "c",
+        "strings.h": "c"
     }
 }

@@ -31,10 +31,11 @@
 #include "networks.h"
 #include "safeUtil.h"
 
-#define MAXBUF 1024
+//Max buf was 1024 but we allow for messages of up to 1400 bytes
+#define MAXBUF 1400
 #define DEBUG_FLAG 1
 #define maxPacketSize 200
-#define MAX_TXT_SIZE (200-2-headerLen)
+#define MAX_TXT_SIZE (200-1-headerLen)
 
 void checkArgs(int argc, char * argv[]);
 void clientControl(int clientSocket);
@@ -46,7 +47,7 @@ uint8_t getHandleFromStr(uint8_t * buffer, uint8_t * handle);
 void setName(uint8_t * argv[], int clientSocket);
 void sendBroadcast(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, 
-			uint16_t bufferLength, uint8_t clientSocket, uint8_t headerLen, uint8_t txtOffset);
+			uint16_t bufferLength, uint8_t clientSocket, uint8_t headerLen, uint16_t txtOffset);
 void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 void getHandleList(int clientSocket);
@@ -269,7 +270,7 @@ void processMsgFromServer(int clientSocket) {
 		while(handleCount > 0){
 			messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
 			if(dataBuffer[2] == 13){
-				printf("--------------------------\n");
+				printf("------------------------------\n");
 				break;
 			}
 			u_char handle[MAXBUF];
@@ -281,7 +282,7 @@ void processMsgFromServer(int clientSocket) {
 		}
 		messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
 		if(dataBuffer[2] == 13){
-			printf("--------------------------\n");
+			printf("------------------------------\n");
 		}
 	}else if(flag == 12){
 		return;
@@ -315,12 +316,14 @@ uint8_t getHandleFromStr(uint8_t * buffer, uint8_t * handle) {
 void sendBroadcast(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
 	uint8_t preHeader[MAXBUF];
 	uint8_t handleLen = strlen((char *)userHandle);
-	int16_t remainingLength = bufferLength[0];
+	uint8_t Offset = 2 + handleLen;
+	uint8_t strOffset = 3;
 	preHeader[0] = 4;
 	preHeader[1] = handleLen;
 	memcpy(preHeader+2, userHandle, handleLen);
+	bufferLength[0] = strlen((char *)buffer+strOffset) + Offset;
 
-	sendTxt(remainingLength, preHeader, buffer, bufferLength[0], clientSocket, handleLen+2, handleLen+1);
+	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, Offset, strOffset);
 }
 
 void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
@@ -347,7 +350,7 @@ void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket
 	}
 	bufferLength[0] = offset + strlen((char *)buffer+strOffset);
 
-	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, offset, offset-2);
+	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, offset, strOffset);
 }
 
 void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
@@ -384,14 +387,19 @@ void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSo
 	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, offset, strOffset);
 }
 
-void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint16_t bufferLength, uint8_t clientSocket, uint8_t headerLen, uint8_t txtOffset){
+void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint16_t bufferLength, uint8_t clientSocket, const uint8_t headerLen, uint16_t txtOffset){
 	uint8_t txtSize = 0;
 	uint8_t sendLength = 0;
-	while(remainingLength > headerLen){
-		if(bufferLength>MAX_TXT_SIZE){
+	if(bufferLength>MAX_TXT_SIZE){
+	}
+	printf("Remaining Length: %d", remainingLength);
+	do{
+		if(remainingLength>MAX_TXT_SIZE){
+			printf("Long\n");
 			txtSize = MAX_TXT_SIZE-1;
 		}else{
-			txtSize = remainingLength - (headerLen);
+			printf("Short\n");
+			txtSize = remainingLength+1;
 		}
 		
 		memcpy(sendBuff+headerLen, buffer+txtOffset, txtSize);
@@ -409,7 +417,9 @@ void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint1
 		}
 		txtOffset += txtSize;
 		remainingLength -= txtSize;
-	}
+		printf("txtOffset: %d", txtOffset);
+		printf("bufferLength: %d", bufferLength);
+	}while(txtOffset < bufferLength);
 }
 
 void getHandleList(int clientSocket){
