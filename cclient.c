@@ -51,6 +51,9 @@ void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer,
 void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 void getHandleList(int clientSocket);
+void readClientList(int clientSocket, uint8_t * dataBuffer);
+void readText(uint8_t * dataBuffer, uint8_t * senderHandle);
+void flag7read(uint8_t * dataBuffer);
 
 
 u_char* userHandle;
@@ -58,7 +61,6 @@ u_char* userHandle;
 
 int main(int argc, char * argv[]) {
 	int clientSocket = 0;         //Socket descriptor
-
 	checkArgs(argc, argv);
 
 	/// Set up the TCP Client socket ///
@@ -145,18 +147,6 @@ void processStdin(int clientSocket) {
 			printf("Invalid command\n");
 			return;
 		}
-
-		// sendBuffer[0] = flag;
-		// memcpy(sendBuffer + 1, inputBuffer, bufferLength+1);
-		// // for(int i = 0; i < bufferLength+1; i++) {
-		// // 	printf(".%02x", sendBuffer[i]);
-		// // }
-
-		// // Send the buffer
-		// bytesSent = sendPDU(clientSocket, sendBuffer, bufferLength+1);
-		// if (bytesSent < 0) {
-		// 	perror("send");
-		// }
     }else{
 		printf("Invalid command\n");
 	}
@@ -237,11 +227,7 @@ void processMsgFromServer(int clientSocket) {
 		printf("Handle assigned\n");
 		return;
 	}else if(flag == 7){
-		uint8_t handleLen = dataBuffer[3];
-		u_char Incorrect[MAXBUF];
-		memcpy(Incorrect, dataBuffer+4, handleLen);
-		Incorrect[handleLen] = '\0';
-		printf("Error Handle not found: %s\n", Incorrect);
+		flag7read(dataBuffer);
 		return;
 	}else if(flag == 4) {
 		u_char senderHandle[MAXBUF];
@@ -250,40 +236,11 @@ void processMsgFromServer(int clientSocket) {
 		printf("%s: %s\n", senderHandle, dataBuffer+4+dataBuffer[3]);
 		return;
 	}else if(flag == 5 || flag == 6){
-		uint8_t numHandles = dataBuffer[4+dataBuffer[3]];
-		uint8_t handles[numHandles][MAXBUF];
-		uint8_t offset = 5+dataBuffer[3];
-		memcpy(senderHandle, dataBuffer+4, dataBuffer[3]);
-		senderHandle[dataBuffer[3]] = '\0';
-
-		for(int i = 0; i < numHandles; i++) {
-			memcpy(handles[i], dataBuffer+offset+1, dataBuffer[offset]);
-			handles[i][dataBuffer[offset]] = '\0';
-			offset += dataBuffer[offset]+1;
-		}
-		printf("%s: %s\n", senderHandle, dataBuffer+offset);
+		readText(dataBuffer, senderHandle);
+		return;
 	}else if(flag == 11){
-		uint32_t handleCount;
-		memcpy(&handleCount, dataBuffer+3, 4);
-		handleCount = ntohl(handleCount);
-		printf("Handle list (%d Clients Online):\n", handleCount);
-		while(handleCount > 0){
-			messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
-			if(dataBuffer[2] == 13){
-				printf("------------------------------\n");
-				break;
-			}
-			u_char handle[MAXBUF];
-			uint8_t handleLen = dataBuffer[3];
-			memcpy(handle, dataBuffer+4, handleLen);
-			handle[handleLen] = '\0';
-			printf("%s\n", handle);
-			handleCount--;
-		}
-		messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
-		if(dataBuffer[2] == 13){
-			printf("------------------------------\n");
-		}
+		readClientList(clientSocket, dataBuffer);
+		return;
 	}else if(flag == 12){
 		return;
 	}else if(flag == 13){
@@ -293,12 +250,66 @@ void processMsgFromServer(int clientSocket) {
 			printf("Server has terminated\n");
 			close(clientSocket);					//Close client socket
 			exit(1);
-		} else{
-			memcpy(dataBuffer+messageLen+2, "\0", 1);
-			printf("%s\n", (char*)(dataBuffer+2));
-			fflush(stdout);
 		}
 	}
+}
+
+void readClientList(int clientSocket, uint8_t * dataBuffer) {
+	uint32_t handleCount;
+	uint8_t messageLen;
+	memcpy(&handleCount, dataBuffer+3, 4);
+	handleCount = ntohl(handleCount);
+	printf("Handle list (%d Clients Online):\n", handleCount);
+	while(handleCount > 0){
+		messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+		if(messageLen == 0) {
+			printf("Server has terminated\n");
+			close(clientSocket);					//Close client socket
+			exit(1);
+		}
+		if(dataBuffer[2] == 13){
+			printf("------------------------------\n");
+			break;
+		}
+		u_char handle[MAXBUF];
+		uint8_t handleLen = dataBuffer[3];
+		memcpy(handle, dataBuffer+4, handleLen);
+		handle[handleLen] = '\0';
+		printf("%s\n", handle);
+		handleCount--;
+	}
+	messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+	if(messageLen == 0) {
+		printf("Server has terminated\n");
+		close(clientSocket);					//Close client socket
+		exit(1);
+	}
+	if(dataBuffer[2] == 13){
+		printf("------------------------------\n");
+	}
+}
+
+void readText(uint8_t * dataBuffer, uint8_t * senderHandle){
+	uint8_t numHandles = dataBuffer[4+dataBuffer[3]];
+	uint8_t handles[numHandles][MAXBUF];
+	uint8_t offset = 5+dataBuffer[3];
+	memcpy(senderHandle, dataBuffer+4, dataBuffer[3]);
+	senderHandle[dataBuffer[3]] = '\0';
+
+	for(int i = 0; i < numHandles; i++) {
+		memcpy(handles[i], dataBuffer+offset+1, dataBuffer[offset]);
+		handles[i][dataBuffer[offset]] = '\0';
+		offset += dataBuffer[offset]+1;
+	}
+	printf("%s: %s\n", senderHandle, dataBuffer+offset);
+}
+
+void flag7read(uint8_t * dataBuffer) {
+	uint8_t handleLen = dataBuffer[3];
+	u_char Incorrect[MAXBUF];
+	memcpy(Incorrect, dataBuffer+4, handleLen);
+	Incorrect[handleLen] = '\0';
+	printf("Error Handle not found: %s\n", Incorrect);
 }
 
 uint8_t getHandleFromStr(uint8_t * buffer, uint8_t * handle) {
