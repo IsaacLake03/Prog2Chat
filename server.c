@@ -133,7 +133,6 @@ void processClient(int clientSocket, Client* clients) {
         close(clientSocket);
 
 		return;
-
     }
 
     // Gets name from initial message

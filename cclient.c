@@ -390,15 +390,11 @@ void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSo
 void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint16_t bufferLength, uint8_t clientSocket, const uint8_t headerLen, uint16_t txtOffset){
 	uint8_t txtSize = 0;
 	uint8_t sendLength = 0;
-	if(bufferLength>MAX_TXT_SIZE){
-	}
-	printf("Remaining Length: %d", remainingLength);
+
 	do{
 		if(remainingLength>MAX_TXT_SIZE){
-			printf("Long\n");
 			txtSize = MAX_TXT_SIZE-1;
 		}else{
-			printf("Short\n");
 			txtSize = remainingLength+1;
 		}
 		
@@ -417,8 +413,6 @@ void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint1
 		}
 		txtOffset += txtSize;
 		remainingLength -= txtSize;
-		printf("txtOffset: %d", txtOffset);
-		printf("bufferLength: %d", bufferLength);
 	}while(txtOffset < bufferLength);
 }
 
