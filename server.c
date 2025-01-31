@@ -235,17 +235,10 @@ void SendHandleList(int clientSocket, Client* clients) {
     }
 	// Send handle count
 	uint32_t handleCountNetOrder = htonl(handleCount);
-	printf("Handle count: %d\n", handleCount);
-	printf("Handle count net order: %d\n", handleCountNetOrder);
 	uint8_t dataBuffer[MAXBUF];
 	dataBuffer[0] = 11;
 	memcpy(dataBuffer + 1, &handleCountNetOrder, 4);
 	
-	// for(int i = 0; i < 5; i++) {
-	// 	printf("%02x.", dataBuffer[i]);
-	// }
-	// printf("\n");
-
 	sendPDU(clientSocket, dataBuffer, 5);
 	// Send handles
 	for (int i = 0; i <= clientCount; i++) {
@@ -317,5 +310,4 @@ void getHandleFromMessage(char* message, char* handle) {
         i++;
     }
     handle[i] = '\0';
-    printf("Handle: %s", handle);
 }
