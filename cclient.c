@@ -407,7 +407,7 @@ void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint1
 		// 	printf(".%02x", sendBuff[j]);
 		// }
 		// printf("\n");
-		uint8_t bytesSent = sendPDU(clientSocket, sendBuff, sendLength+1);
+		int8_t bytesSent = sendPDU(clientSocket, sendBuff, sendLength+1);
 		if (bytesSent < 0) {
 			perror("send");
 		}
