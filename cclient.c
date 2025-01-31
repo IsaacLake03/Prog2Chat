@@ -323,6 +323,12 @@ void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket
 
 void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
 	const uint8_t numDest = (uint8_t)buffer[3]-'0';
+
+	if(numDest < 2 || numDest > 9) {
+		printf("Invalid number of handles\n");
+		return;
+	}
+	
 	uint8_t handleOffset = 0;
 	uint8_t preHeader[MAXBUF];
 	uint8_t HandleList[MAXBUF];
