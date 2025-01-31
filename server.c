@@ -115,12 +115,12 @@ void processClient(int clientSocket) {
 	printf("Flag: %x\n", flag);
 	printf("Message length: %d\n", messageLen);
 
-	for(int i = 0; i < messageLen+2; i++) {
-		printf("%02x.", dataBuffer[i]);
-	}
-	printf("\n");
+	// for(int i = 0; i < messageLen+2; i++) {
+	// 	printf("%02x.", dataBuffer[i]);
+	// }
+	// printf("\n");
 
-	if (messageLen < 3){                //Client connection closed
+	if (messageLen < 1){                //Client connection closed
 		char * name = "Null";
         printf("Client has closed their connection\n");
 		AssignHandle(clientSocket, name, 4);
@@ -148,7 +148,7 @@ void processClient(int clientSocket) {
 
 	// Broadcast message
 	if(flag == 4) {
-		broadcastMessage((char*)(dataBuffer+3), clientSocket);
+		broadcastMessage((char*)(dataBuffer+2), clientSocket);
 		printf("Broadcast message sent from client %s\n", client->handle);
 		return;
 	}
@@ -223,23 +223,50 @@ Client* getClientByHandle(char* handle) {
 
 void SendHandleList(int clientSocket) {
     // Packs Message into buffer
+	uint32_t handleCount = 0;
     for (int i = 0; i <= 500; i++) {
-        if (clients[i].handle[0] != '\0') {
-			uint8_t dataBuffer[MAXBUF];
-    		uint8_t handleLen = strlen(clients[i].handle);
-            memcpy(dataBuffer, clients[i].handle, handleLen);
-            memcpy(dataBuffer + handleLen, "\n\0", 2);
-			sendPDU(clientSocket, dataBuffer, handleLen+2);
-        }
+        if (clients[i].handle[0] != '\0' && strcmp(clients[i].handle, "Null") != 0) {
+			handleCount++;
+		}
     }
+	// Send handle count
+	uint32_t handleCountNetOrder = htonl(handleCount);
+	printf("Handle count: %d\n", handleCount);
+	printf("Handle count net order: %d\n", handleCountNetOrder);
+	uint8_t dataBuffer[MAXBUF];
+	dataBuffer[0] = 11;
+	memcpy(dataBuffer + 1, &handleCountNetOrder, 4);
+	
+	// for(int i = 0; i < 5; i++) {
+	// 	printf("%02x.", dataBuffer[i]);
+	// }
+	// printf("\n");
+
+	sendPDU(clientSocket, dataBuffer, 5);
+	// Send handles
+	for (int i = 0; i <= 500; i++) {
+        if (clients[i].handle[0] != '\0' && strcmp(clients[i].handle, "Null") != 0) {
+			uint8_t dataBuffer[MAXBUF];
+			uint8_t handleLen = strlen(clients[i].handle);
+			dataBuffer[0] = 12;
+			dataBuffer[1] = handleLen;
+			memcpy(dataBuffer+2, clients[i].handle, handleLen+1);
+			sendPDU(clientSocket, dataBuffer, handleLen+2);
+		}
+    }
+	// Send end of list
+	uint8_t dataBufferEnd[1];
+	dataBufferEnd[0] = 13;
+	sendPDU(clientSocket, dataBufferEnd, 1);
 }
+
 
 void broadcastMessage(char* message, int senderSocket) {
 	// Broadcasts message to all clients
-	printf("Broadcasting message: %s\n", message);
+	printf("Broadcasting message");
 	for (int i = 0; i <= 500; i++) {
 		if (clients[i].handle[0] != '\0' && clients[i].socketNumber != senderSocket && strcmp(clients[i].handle, "Null") != 0){
-			sendPDU(clients[i].socketNumber, (uint8_t*)message, strlen(message));
+			sendPDU(clients[i].socketNumber, (uint8_t*)message, strlen(message)+1);
 		}
 	}
 
@@ -270,10 +297,10 @@ void sendMessage(char* message, int senderSocket, uint8_t messageLen) {
 		}else{
 			printf("Message Sent to %d: %s\n", dest->socketNumber, message+offset);
 			sendPDU(dest->socketNumber, (uint8_t*)message+2, messageLen);
-			for(int i = 0; i < messageLen; i++) {
-				printf("%02x.", message[i+2]);
-			}
-			printf("\n");
+			// for(int i = 0; i < messageLen; i++) {
+			// 	printf("%02x.", message[i+2]);
+			// }
+			// printf("\n");
 		}
 	}
 }

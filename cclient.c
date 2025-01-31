@@ -33,14 +33,23 @@
 
 #define MAXBUF 1024
 #define DEBUG_FLAG 1
+#define maxPacketSize 200
+#define MAX_TXT_SIZE (200-2-headerLen)
 
 void checkArgs(int argc, char * argv[]);
 void clientControl(int clientSocket);
 void processStdin(int clientSocket);
 int readFromStdin(uint8_t * buffer);
 void processMsgFromServer(int serverSocket);
-uint8_t getFlag(uint8_t * buffer, uint8_t * bufferLength);
+uint8_t getFlag(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
 uint8_t getHandleFromStr(uint8_t * buffer, uint8_t * handle);
+void setName(uint8_t * argv[], int clientSocket);
+void sendBroadcast(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
+void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, 
+			uint16_t bufferLength, uint8_t clientSocket, uint8_t headerLen, uint8_t txtOffset);
+void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
+void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket);
+void getHandleList(int clientSocket);
 
 
 u_char* userHandle;
@@ -60,23 +69,29 @@ int main(int argc, char * argv[]) {
 	addToPollSet(STDIN_FILENO);
 
 	// Send the client's handle
-	userHandle = (u_char*)argv[1];
-	uint8_t handleBuffer[MAXBUF];
-	uint8_t handlelen = strlen(argv[1]);
-	handleBuffer[0] = 1;
-	handleBuffer[1] = handlelen;
-	memcpy(handleBuffer+2, argv[1], strlen(argv[1]));
+	setName((uint8_t**)argv, clientSocket);
 
-	sendPDU(clientSocket, (uint8_t*)handleBuffer, strlen((char*)handleBuffer));
-
-	
 	while (1) {
 		clientControl(clientSocket);
-
 	}
-	
 	close(clientSocket);
 	return 0;
+}
+
+void setName(uint8_t * argv[], int clientSocket) {
+	// Send the client's handle
+	userHandle = (u_char*)argv[1];
+	uint8_t handleBuffer[MAXBUF];
+	uint8_t handlelen = strlen((char *)argv[1]);
+	if(handlelen > 100) {
+		printf("Handle too long\n");
+		exit(1);
+	}
+	handleBuffer[0] = 1;
+	handleBuffer[1] = handlelen;
+	memcpy(handleBuffer+2, argv[1], handlelen);
+
+	sendPDU(clientSocket, (uint8_t*)handleBuffer, strlen((char*)handleBuffer));
 }
 
 /* Esnure the correct # of parameters were passed. Terminate otherwise. */
@@ -110,133 +125,67 @@ void clientControl(int clientSocket) {
 /* Reads input from stdin, converts into a PDU and sends to the server */
 void processStdin(int clientSocket) {
     uint8_t inputBuffer[MAXBUF];
-    uint8_t sendBuffer[MAXBUF];
-    uint8_t bytesSent = 0;
-    uint8_t bufferLength = 0;
+    //uint8_t sendBuffer[MAXBUF];
+    //uint8_t bytesSent = 0;
+    uint16_t bufferLength = 0;
     uint8_t flag = 0; // Change u_char to uint8_t
 
     bufferLength = readFromStdin(inputBuffer); // Read from Stdin
+	if(bufferLength >=1400){
+		printf("Message too long\n");
+		return;
+	}
 
     // Handle Flags
     if (*(inputBuffer) == '%') {
-		flag = getFlag(inputBuffer, &bufferLength);
+		flag = getFlag(inputBuffer, &bufferLength, clientSocket);
 
 		if (flag == 0) {
 			printf("Invalid command\n");
 			return;
 		}
 
-		sendBuffer[0] = flag;
-		memcpy(sendBuffer + 1, inputBuffer, bufferLength+1);
-		// for(int i = 0; i < bufferLength+1; i++) {
-		// 	printf(".%02x", sendBuffer[i]);
-		// }
+		// sendBuffer[0] = flag;
+		// memcpy(sendBuffer + 1, inputBuffer, bufferLength+1);
+		// // for(int i = 0; i < bufferLength+1; i++) {
+		// // 	printf(".%02x", sendBuffer[i]);
+		// // }
 
-		// Send the buffer
-		bytesSent = sendPDU(clientSocket, sendBuffer, bufferLength+1);
-		if (bytesSent < 0) {
-			perror("send");
-		}
-    }
+		// // Send the buffer
+		// bytesSent = sendPDU(clientSocket, sendBuffer, bufferLength+1);
+		// if (bytesSent < 0) {
+		// 	perror("send");
+		// }
+    }else{
+		printf("Invalid command\n");
+	}
 }
 
-uint8_t getFlag(uint8_t * buffer, uint8_t * bufferLength) {
+uint8_t getFlag(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket) {
 		// Broadcast message
 	if (*(buffer + 1) == 'b' || *(buffer + 1) == 'B') {
-		printf("Broadcasting message: %s\n", buffer + 3);
+		sendBroadcast(buffer, bufferLength, clientSocket);
 		return 4;
 	}
 
 	// Send message to specific client
 	if (*(buffer + 1) == 'm' || *(buffer + 1) == 'M') {
-		uint8_t preHeader[MAXBUF];
-		uint8_t handleLen = strlen((char *)userHandle);
-		uint8_t numDest = 1;
-		uint8_t destHandles[1][MAXBUF];
-		uint8_t destHandleLens[1];
-		uint8_t offset = 1 + handleLen + 1;
-		uint8_t strOffset = 3;
-		preHeader[0] = handleLen;
-		memcpy(preHeader+1, userHandle, handleLen);
-		memcpy(preHeader+1+handleLen, &numDest, 1);
-
-		// Get destination handle
-		for(int i = 0; i < numDest; i++){
-			destHandleLens[i] = getHandleFromStr(buffer+strOffset, destHandles[i]);
-			strOffset += destHandleLens[i] + 1;
-			memcpy(preHeader+offset, &destHandleLens[i], 1);
-			offset++;
-			memcpy(preHeader+offset, destHandles[i], destHandleLens[i]);
-			offset += destHandleLens[i];
-		}
-		bufferLength[0] = offset + strlen((char *)buffer+strOffset);
-		memcpy(preHeader+offset, buffer+strOffset, bufferLength[0]-offset);
-		memcpy(buffer, preHeader, bufferLength[0]);
-		buffer[bufferLength[0]] = '\0';
-		bufferLength[0]++;
-		for(uint8_t j=0; j<bufferLength[0]; j++) {
-				printf(".%02x", preHeader[j]);
-		}
-		printf("\n");
-		printf("Sending message\n");
-		
+		//printf("Sending message\n");
+		sendMessage(buffer, bufferLength, clientSocket);
 		return 5;
 	}
 
 	// Send message to multiple clients
 	if (*(buffer + 1) == 'c' || *(buffer + 1) == 'C') {
-		const uint8_t numDest = (uint8_t)buffer[3]-'0';
-		uint8_t handleOffset = 0;
-		uint8_t preHeader[MAXBUF];
-		uint8_t HandleList[MAXBUF];
-		const uint8_t handleLen = strlen((char *)userHandle);
-		uint8_t destHandles[MAXBUF][1];
-		uint8_t destHandleLens[MAXBUF];
-		uint8_t offset = 1 + handleLen + 1;
-		uint8_t strOffset = 5;
-		
-		preHeader[0] = handleLen;
-		memcpy(preHeader+1, userHandle, handleLen);
-		preHeader[handleLen+1] = numDest;
-		printf("\n");
-		printf("NumDest: %d\n", numDest);
-
-		// Get destination handle
-		for(int i = 0; i < numDest; i++){
-			destHandleLens[i] = getHandleFromStr(buffer+strOffset, destHandles[i]);
-			strOffset += destHandleLens[i] + 1;
-			memcpy(HandleList+handleOffset, &destHandleLens[i], 1);
-			handleOffset++;
-			offset++;
-			memcpy(HandleList+handleOffset, destHandles[i], destHandleLens[i]);
-			handleOffset += destHandleLens[i];
-			offset += destHandleLens[i];
-			printf("DestHandle: %s\n", destHandles[i]);
-			printf("DestHandleLen: %d\n", destHandleLens[i]);
-			printf("i: %d, NumDest: %d\n", i, numDest);
-		}
-
-		for(uint8_t i = 0; i < handleOffset; i++) {
-			printf("%02x.", HandleList[i]);
-		}
-		printf("\n");
-		bufferLength[0] = offset + strlen((char *)buffer+strOffset);
-		memcpy(preHeader+handleLen+2, HandleList, handleOffset);
-		memcpy(preHeader+offset, buffer+strOffset, bufferLength[0]-offset);
-		memcpy(buffer, preHeader, bufferLength[0]);
-		buffer[bufferLength[0]] = '\0';
-		bufferLength[0]++;
-		for(uint8_t j=0; j<bufferLength[0]; j++) {
-				printf(".%02x", preHeader[j]);
-		}
-		printf("\n");
-		printf("Sending to multiple\n");
+		sendMessageMany(buffer, bufferLength, clientSocket);
+		//printf("Sending to multiple\n");
 		return 6;
 	}
 
 	// Get current handle list
 	if (*(buffer + 1) == 'l' || *(buffer + 1) == 'L') {
-		printf("Requesting handle list\n");
+		//printf("Requesting handle list\n");
+		getHandleList(clientSocket);
 		return 10;
 	}
 	return 0;
@@ -270,9 +219,9 @@ void processMsgFromServer(int clientSocket) {
 	uint8_t senderHandle[MAXBUF];
 	int messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
 	uint8_t flag = dataBuffer[2];
-	for(uint8_t i = 0; i < messageLen+2; i++) {
-		printf("%02x.", dataBuffer[i+2]);
-	}
+	// for(uint8_t i = 0; i < messageLen; i++) {
+	// 	printf("%02x.", dataBuffer[i+2]);
+	// }
 	if(messageLen < 1) {
 		printf("Server has terminated\n");
 		close(clientSocket);
@@ -294,6 +243,7 @@ void processMsgFromServer(int clientSocket) {
 		printf("Error Handle not found: %s\n", Incorrect);
 		return;
 	}else if(flag == 4) {
+		u_char senderHandle[MAXBUF];
 		memcpy(senderHandle, dataBuffer+4, dataBuffer[3]);
 		senderHandle[dataBuffer[3]] = '\0';
 		printf("%s: %s\n", senderHandle, dataBuffer+4+dataBuffer[3]);
@@ -311,6 +261,32 @@ void processMsgFromServer(int clientSocket) {
 			offset += dataBuffer[offset]+1;
 		}
 		printf("%s: %s\n", senderHandle, dataBuffer+offset);
+	}else if(flag == 11){
+		uint32_t handleCount;
+		memcpy(&handleCount, dataBuffer+3, 4);
+		handleCount = ntohl(handleCount);
+		printf("Handle list (%d Clients Online):\n", handleCount);
+		while(handleCount > 0){
+			messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+			if(dataBuffer[2] == 13){
+				printf("--------------------------\n");
+				break;
+			}
+			u_char handle[MAXBUF];
+			uint8_t handleLen = dataBuffer[3];
+			memcpy(handle, dataBuffer+4, handleLen);
+			handle[handleLen] = '\0';
+			printf("%s\n", handle);
+			handleCount--;
+		}
+		messageLen = recvPDU(clientSocket, dataBuffer, MAXBUF);
+		if(dataBuffer[2] == 13){
+			printf("--------------------------\n");
+		}
+	}else if(flag == 12){
+		return;
+	}else if(flag == 13){
+		return;
 	}else{
 		if(messageLen == 0) {
 			printf("Server has terminated\n");
@@ -334,4 +310,110 @@ uint8_t getHandleFromStr(uint8_t * buffer, uint8_t * handle) {
 	}
 	handle[handleLen] = '\0';
 	return handleLen;
+}
+
+void sendBroadcast(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
+	uint8_t preHeader[MAXBUF];
+	uint8_t handleLen = strlen((char *)userHandle);
+	int16_t remainingLength = bufferLength[0];
+	preHeader[0] = 4;
+	preHeader[1] = handleLen;
+	memcpy(preHeader+2, userHandle, handleLen);
+
+	sendTxt(remainingLength, preHeader, buffer, bufferLength[0], clientSocket, handleLen+2, handleLen+1);
+}
+
+void sendMessage(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
+	uint8_t preHeader[MAXBUF];
+	uint8_t handleLen = strlen((char *)userHandle);
+	uint8_t numDest = 1;
+	uint8_t destHandles[1][MAXBUF];
+	uint8_t destHandleLens[1];
+	uint8_t offset = 2 + handleLen + 1;
+	uint8_t strOffset = 3;
+	preHeader[0] = 5;
+	preHeader[1] = handleLen;
+	memcpy(preHeader+2, userHandle, handleLen);
+	memcpy(preHeader+2+handleLen, &numDest, 1);
+
+	// Get destination handle
+	for(int i = 0; i < numDest; i++){
+		destHandleLens[i] = getHandleFromStr(buffer+strOffset, destHandles[i]);
+		strOffset += destHandleLens[i] + 1;
+		memcpy(preHeader+offset, &destHandleLens[i], 1);
+		offset++;
+		memcpy(preHeader+offset, destHandles[i], destHandleLens[i]);
+		offset += destHandleLens[i];
+	}
+	bufferLength[0] = offset + strlen((char *)buffer+strOffset);
+
+	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, offset, offset-2);
+}
+
+void sendMessageMany(uint8_t * buffer, uint16_t * bufferLength, uint8_t clientSocket){
+	const uint8_t numDest = (uint8_t)buffer[3]-'0';
+	uint8_t handleOffset = 0;
+	uint8_t preHeader[MAXBUF];
+	uint8_t HandleList[MAXBUF];
+	const uint8_t handleLen = strlen((char *)userHandle);
+	uint8_t destHandles[MAXBUF][1];
+	uint8_t destHandleLens[MAXBUF];
+	uint8_t offset = 2 + handleLen + 1;
+	uint8_t strOffset = 5;
+	
+	preHeader[0] = 6;
+	preHeader[1] = handleLen;
+	memcpy(preHeader+2, userHandle, handleLen);
+	preHeader[handleLen+2] = numDest;
+
+	// Get destination handle
+	for(int i = 0; i < numDest; i++){
+		destHandleLens[i] = getHandleFromStr(buffer+strOffset, destHandles[i]);
+		strOffset += destHandleLens[i] + 1;
+		memcpy(HandleList+handleOffset, &destHandleLens[i], 1);
+		handleOffset++;
+		offset++;
+		memcpy(HandleList+handleOffset, destHandles[i], destHandleLens[i]);
+		handleOffset += destHandleLens[i];
+		offset += destHandleLens[i];
+	}
+
+	bufferLength[0] = offset + strlen((char *)buffer+strOffset);
+	memcpy(preHeader+handleLen+3, HandleList, handleOffset);
+
+	sendTxt(bufferLength[0], preHeader, buffer, bufferLength[0], clientSocket, offset, strOffset);
+}
+
+void sendTxt(int16_t remainingLength, uint8_t * sendBuff,uint8_t * buffer, uint16_t bufferLength, uint8_t clientSocket, uint8_t headerLen, uint8_t txtOffset){
+	uint8_t txtSize = 0;
+	uint8_t sendLength = 0;
+	while(remainingLength > headerLen){
+		if(bufferLength>MAX_TXT_SIZE){
+			txtSize = MAX_TXT_SIZE-1;
+		}else{
+			txtSize = remainingLength - (headerLen);
+		}
+		
+		memcpy(sendBuff+headerLen, buffer+txtOffset, txtSize);
+
+		sendLength = txtSize + headerLen;
+		sendBuff[sendLength] = '\0';
+		sendLength++;
+		// for(uint8_t j=0; j<sendLength; j++) {
+		// 	printf(".%02x", sendBuff[j]);
+		// }
+		// printf("\n");
+		uint8_t bytesSent = sendPDU(clientSocket, sendBuff, sendLength+1);
+		if (bytesSent < 0) {
+			perror("send");
+		}
+		txtOffset += txtSize;
+		remainingLength -= txtSize;
+	}
+}
+
+void getHandleList(int clientSocket){
+	uint8_t handleList[1];
+	handleList[0] = 10;
+	sendPDU(clientSocket, handleList, 1);
 }
